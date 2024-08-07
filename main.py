@@ -5,12 +5,14 @@ import pandas as pd
 import requests
 import json
 from io import StringIO
-import geopandas as gpd
+from shapely.geometry import Point
+import shapely.wkt
 
 app = FastAPI()
+
 @app.get("/")
 def root():
-    return {"message": "This API aims to create a seamless integration from the different B/Ds dynamic dataset and the Common Spatial Data Infrastructure (CSDI). The goal is to georeference the weather station data and transform it into a GeoJSON format for real-time fetching, visualization and analysis."}
+    return {"message": "This API aims to create a seamless integration of weather station data from the Hong Kong Observatory (HKO) and the Common Spatial Data Infrastructure (CSDI). The goal is to georeference the weather station data and transform it into a GeoJSON format for real-time fetching, visualization, and analysis."}
 
 @app.get("/td/meter")
 async def process_data(bbox: Optional[str] = None, limit: Optional[int] = None):
@@ -40,14 +42,25 @@ async def process_data(bbox: Optional[str] = None, limit: Optional[int] = None):
         if limit:
             merged_df = merged_df.head(limit)
 
-        gdf = gpd.GeoDataFrame(
-            merged_df,
-            geometry=gpd.points_from_xy(merged_df.Longitude, merged_df.Latitude),
-            crs="EPSG:4326"
-        )
-        geojson_data = gdf.to_json()
-        return JSONResponse(content=json.loads(geojson_data), media_type="application/geo+json")
+        features = []
+        for _, row in merged_df.iterrows():
+            point = Point(row['Longitude'], row['Latitude'])
+            feature = {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [point.x, point.y]
+                },
+                "properties": row.drop(['Longitude', 'Latitude']).to_dict()
+            }
+            features.append(feature)
+
+        geojson_data = {
+            "type": "FeatureCollection",
+            "features": features
+        }
+
+        return JSONResponse(content=geojson_data, media_type="application/geo+json")
 
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
-
