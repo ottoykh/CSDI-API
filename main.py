@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from typing import Optional
 import pandas as pd
@@ -24,10 +24,12 @@ async def process_occupancy_data(bbox: Optional[str], limit: Optional[int]) -> p
     occupancy_url = "https://resource.data.one.gov.hk/td/psiparkingspaces/occupancystatus/occupancystatus.csv"
     parkingspaces_url = "parkingspaces.csv"
 
-    occupancy_df = await fetch_csv_data(occupancy_url)
-    occupancy_df.rename(columns={'ï»¿ParkingSpaceId': 'ParkingSpaceId'}, inplace=True)
+    occupancy_task = asyncio.create_task(fetch_csv_data(occupancy_url))
+    parkingspaces_task = asyncio.to_thread(pd.read_csv, parkingspaces_url, skiprows=2)
 
-    parkingspaces_df = await asyncio.to_thread(pd.read_csv, parkingspaces_url, skiprows=2)
+    occupancy_df, parkingspaces_df = await asyncio.gather(occupancy_task, parkingspaces_task)
+
+    occupancy_df.rename(columns={'ï»¿ParkingSpaceId': 'ParkingSpaceId'}, inplace=True)
     parkingspaces_df.rename(columns={'ParkingSpa': 'ParkingSpaceId'}, inplace=True)
 
     merged_df = pd.merge(occupancy_df, parkingspaces_df, on='ParkingSpaceId')
