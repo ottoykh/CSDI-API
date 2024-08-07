@@ -1,4 +1,3 @@
 fastapi
 pandas
-geopandas
-uvicorn
+shapely
