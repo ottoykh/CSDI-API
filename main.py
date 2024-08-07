@@ -24,7 +24,7 @@ async def process_occupancy_data(bbox: Optional[str], limit: Optional[int]) -> p
     occupancy_url = "https://resource.data.one.gov.hk/td/psiparkingspaces/occupancystatus/occupancystatus.csv"
     parkingspaces_url = "parkingspaces.csv"
 
-    occupancy_df = await asyncio.to_thread(fetch_csv_data, occupancy_url)
+    occupancy_df = await fetch_csv_data(occupancy_url)
     occupancy_df.rename(columns={'ï»¿ParkingSpaceId': 'ParkingSpaceId'}, inplace=True)
 
     parkingspaces_df = await asyncio.to_thread(pd.read_csv, parkingspaces_url, skiprows=2)
