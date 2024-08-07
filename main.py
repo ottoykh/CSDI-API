@@ -6,7 +6,6 @@ import requests
 import json
 from io import StringIO
 import asyncio
-import concurrent.futures
 
 app = FastAPI()
 
@@ -73,10 +72,7 @@ def create_geojson(merged_df: pd.DataFrame) -> dict:
 async def process_data(bbox: Optional[str] = None, limit: Optional[int] = None):
     try:
         merged_df = await process_occupancy_data(bbox, limit)
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            geojson_data = await asyncio.to_thread(executor.submit, create_geojson, merged_df)
-
+        geojson_data = await asyncio.to_thread(create_geojson, merged_df)
         return JSONResponse(content=geojson_data, media_type="application/geo+json")
 
     except Exception as e:
