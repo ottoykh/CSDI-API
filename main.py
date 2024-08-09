@@ -2,6 +2,7 @@ from fastapi import FastAPI, Query
 from typing import List, Dict, Union, Optional
 from urllib.parse import unquote
 import jieba
+import jieba.posseg as pseg
 
 jieba.load_userdict("Ref/number.txt")
 jieba.load_userdict("Ref/area.txt")
@@ -13,6 +14,7 @@ jieba.load_userdict("Ref/Building_kh.txt")
 
 app = FastAPI()
 
+# Areas data for Hong Kong
 areas = {
     '香港': {'中西區': ['堅尼地城', '石塘咀', '西營盤', '上環', '中環', '金鐘', '半山', '山頂'],
              '灣仔': ['灣仔', '銅鑼灣', '跑馬地', '大坑', '掃桿埔', '渣甸山'],
@@ -36,61 +38,44 @@ areas = {
 
 road_related_words = ['路', '道', '街', '巷', '橋', '隧道', '大道', '高速公路', '公路', '馬路', '徑']
 
-def segment_input(input_str: str) -> List[Dict[str, Union[str, List[str]]]]:
-    decoded_input = unquote(input_str)  
-    results = []
+def segment_input(input_str: str) -> Dict[str, Union[str, List[str]]]:
+    decoded_input = unquote(input_str)
+    words = pseg.cut(decoded_input)
+    
+    result = {
+        'area': '',
+        'district': '',
+        'sub_district': '',
+        'street_name': '',
+        'street_number': '',
+        'building': ''
+    }
+    
+    for word, flag in words:
+        if any(road_word in word for road_word in road_related_words):
+            result['street_name'] += word
+        elif flag == 'm' or '號' in word:
+            if '號' in word:
+                result['street_number'] = word.split('號')[0] + '號'
+            else:
+                result['street_number'] = word
+        elif word in areas.keys():
+            result['area'] = word
+        elif any(word in sd for sd in [item for sublist in areas.values() for district in sublist for sd in sublist[district]]):
+            for area, districts in areas.items():
+                for district, sub_districts in districts.items():
+                    if word == district:
+                        result['district'] = word
+                        result['area'] = area
+                    elif word in sub_districts:
+                        result['sub_district'] = word
+                        result['district'] = district
+                        result['area'] = area
 
-    for area, districts in areas.items():
-        for district, sub_districts in districts.items():
-            match = next((sd for sd in sub_districts if sd in decoded_input), None)
-            if match:
-                building_street = decoded_input.replace(match, '').strip()
-                
-                for prefix in [area, district]:
-                    if building_street.startswith(prefix):
-                        building_street = building_street[len(prefix):].strip()
-                
-                if '號' in building_street:
-                    street, building_details = (building_street.split('號', 1) + [''])[:2]
-                    street = street.strip()
-                    street_number = '號'
-                else:
-                    street = building_street.strip()
-                    street_number = ''
-                    building_details = ''
+    remaining_input = decoded_input.replace(result['street_name'], '').replace(result['street_number'], '')
+    result['building'] = remaining_input.strip()
 
-                results.append({
-                    'area': area,
-                    'district': district,
-                    'sub_district': match,
-                    'street_name': street,
-                    'street_number': street_number,
-                    'building': building_details.strip()
-                })
-                return results
-
-    if decoded_input.strip():
-        building_street = decoded_input.strip()
-        
-        if '號' in building_street:
-            street, building_details = (building_street.split('號', 1) + [''])[:2]
-            street = street.strip()
-            street_number = '號'
-        else:
-            street = building_street.strip()
-            street_number = ''
-            building_details = ''
-
-        results.append({
-            'area': '',
-            'district': '',
-            'sub_district': '',
-            'street_name': street,
-            'street_number': street_number,
-            'building': building_details.strip()
-        })
-
-    return results
+    return result
 
 @app.get("/seg")
 async def segment_input_text(
@@ -100,23 +85,10 @@ async def segment_input_text(
     try:
         segmented_output = segment_input(q)
         if item:
-            filtered_output = []
-            for result in segmented_output:
-                filtered_result = {}
-                if 'a' in item:
-                    filtered_result['area'] = result.get('area', '')
-                if 'd' in item:
-                    filtered_result['district'] = result.get('district', '')
-                if 'sd' in item:
-                    filtered_result['sub_district'] = result.get('sub_district', '')
-                if 'st' in item:
-                    filtered_result['street_name'] = result.get('street_name', '')
-                if 'sn' in item:
-                    filtered_result['street_number'] = result.get('street_number', '')
-                if 'b' in item:
-                    filtered_result['building'] = result.get('building', '')
-                filtered_output.append(filtered_result)
+            # Filter the result based on the requested items
+            filtered_output = {k: v for k, v in segmented_output.items() if k[0] in item}
             return {"segmented_text": filtered_output}
         return {"segmented_text": segmented_output}
     except Exception as e:
         return {"error": str(e)}
+
