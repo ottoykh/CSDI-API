@@ -13,7 +13,6 @@ jieba.load_userdict("Ref/Building_kh.txt")
 
 app = FastAPI()
 
-# Predefined areas, districts, and sub-districts
 areas = {
     '香港': {'中西區': ['堅尼地城', '石塘咀', '西營盤', '上環', '中環', '金鐘', '半山', '山頂'],
             '灣仔': ['灣仔', '銅鑼灣', '跑馬地', '大坑', '掃桿埔', '渣甸山'],
@@ -36,21 +35,29 @@ areas = {
 }
 
 def segment_input(input_str: str) -> List[Dict[str, Union[str, List[str]]]]:
-    decoded_input = unquote(input_str)  # Decode URL-encoded input string
+    decoded_input = unquote(input_str)  
     results = []
 
-    # Iterate through areas and districts, using a single loop for efficiency
     for area, districts in areas.items():
         for district, sub_districts in districts.items():
-            # Check for sub-district match and extract relevant parts
             match = next((sd for sd in sub_districts if sd in decoded_input), None)
             if match:
+                # Remove the matched sub-district from the input string
                 building_street = decoded_input.replace(match, '').strip()
-                building_street = building_street.lstrip(area).lstrip(district).lstrip(match).strip()
+                
+                # Remove area and district prefixes if present
+                for prefix in [area, district]:
+                    if building_street.startswith(prefix):
+                        building_street = building_street[len(prefix):].strip()
                 
                 # Split into street and building details
-                street, building_details = (building_street.split('號', 1) + [''])[:2]
-                street = street.strip() + '號'
+                if '號' in building_street:
+                    street, building_details = (building_street.split('號', 1) + [''])[:2]
+                    street = street.strip() + '號'
+                else:
+                    street = building_street.strip() + '號'
+                    building_details = ''
+
                 results.append({
                     'area': area,
                     'district': district,
@@ -60,9 +67,17 @@ def segment_input(input_str: str) -> List[Dict[str, Union[str, List[str]]]]:
                 })
                 return results
 
+    # Default fallback if no specific match is found
     if decoded_input.strip():
-        street, building_details = (decoded_input.strip().split('號', 1) + [''])[:2]
-        street = street.strip() + '號'
+        building_street = decoded_input.strip()
+        
+        if '號' in building_street:
+            street, building_details = (building_street.split('號', 1) + [''])[:2]
+            street = street.strip() + '號'
+        else:
+            street = building_street.strip() + '號'
+            building_details = ''
+
         results.append({
             'area': '',
             'district': '',
