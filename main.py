@@ -83,15 +83,27 @@ def segment_input(input_str: str) -> Dict[str, Union[str, List[str], None]]:
 @app.get("/seg")
 async def segment_input_text(
     q: str = Query(..., description="The input text to be segmented"),
-    item: Optional[List[str]] = Query(None, description="Specific items to return (area, district, sub_district, street_name, street_number, building)")
+    item: Optional[List[str]] = Query(None, description="Specific items to return (a for area, d for district, sd for sub_district, st for street_name, sn for street_number, b for building)")
 ):
     try:
         segmented_output = segment_input(q)
+        
+        # Mapping query terms to actual fields
+        item_mapping = {
+            'a': 'area',
+            'd': 'district',
+            'sd': 'sub_district',
+            'st': 'street_name',
+            'sn': 'street_number',
+            'b': 'building'
+        }
+        
         if item:
-            # Filter the output to return only the requested items
-            filtered_output = {key: value for key, value in segmented_output.items() if key in item}
+            # Translate short terms to full terms and filter the output
+            filtered_output = {item_mapping[short_term]: segmented_output[item_mapping[short_term]] for short_term in item if short_term in item_mapping}
             return {"segmented_text": filtered_output}
         else:
+            # Default to returning all items if no specific query terms are provided
             return {"segmented_text": segmented_output}
     except Exception as e:
         return {"error": str(e)}
