@@ -14,7 +14,6 @@ jieba.load_userdict("Ref/Building_kh.txt")
 
 app = FastAPI()
 
-# Areas data for Hong Kong
 areas = {
     '香港': {'中西區': ['堅尼地城', '石塘咀', '西營盤', '上環', '中環', '金鐘', '半山', '山頂'],
              '灣仔': ['灣仔', '銅鑼灣', '跑馬地', '大坑', '掃桿埔', '渣甸山'],
@@ -38,57 +37,61 @@ areas = {
 
 road_related_words = ['路', '道', '街', '巷', '橋', '隧道', '大道', '高速公路', '公路', '馬路', '徑']
 
-def segment_input(input_str: str) -> Dict[str, Union[str, List[str]]]:
+def segment_input(input_str: str) -> Dict[str, Union[str, List[str], None]]:
     decoded_input = unquote(input_str)
     words = pseg.cut(decoded_input)
-    
-    result = {
-        'area': '',
-        'district': '',
-        'sub_district': '',
-        'street_name': '',
-        'street_number': '',
-        'building': ''
-    }
-    
+
+    street_name, street_number = [], []
+    district, sub_district, area, building_details = None, None, None, ''
+    number_found = False
+
     for word, flag in words:
         if any(road_word in word for road_word in road_related_words):
-            result['street_name'] += word
-        elif flag == 'm' or '號' in word:
+            street_name.append(word)
+        elif (flag == 'm' or '號' in word) and not number_found:
+            street_number.append(word)
             if '號' in word:
-                result['street_number'] = word.split('號')[0] + '號'
-            else:
-                result['street_number'] = word
-        elif word in areas.keys():
-            result['area'] = word
-        elif any(word in sd for sd in [item for sublist in areas.values() for district in sublist for sd in sublist[district]]):
-            for area, districts in areas.items():
-                for district, sub_districts in districts.items():
-                    if word == district:
-                        result['district'] = word
-                        result['area'] = area
+                number_found = True
+                street_number[-1] = street_number[-1].split('號')[0] + '號'
+        elif word in [sd for districts in areas.values() for sd in [k for k, v in districts.items()] + [item for sublist in districts.values() for item in sublist]]:
+            for area_name, districts in areas.items():
+                for district_name, sub_districts in districts.items():
+                    if word == district_name:
+                        district = word
+                        area = area_name
+                        break
                     elif word in sub_districts:
-                        result['sub_district'] = word
-                        result['district'] = district
-                        result['area'] = area
+                        sub_district = word
+                        district = district_name
+                        area = area_name
+                        break
+                if area:
+                    break
 
-    remaining_input = decoded_input.replace(result['street_name'], '').replace(result['street_number'], '')
-    result['building'] = remaining_input.strip()
+    if street_name or street_number:
+        building_details = decoded_input.split(''.join(street_name) + ''.join(street_number), 1)[-1].strip()
 
-    return result
+    return {
+        'area': area,
+        'district': district,
+        'sub_district': sub_district,
+        'street_name': ' '.join(street_name) if street_name else None,
+        'street_number': ' '.join(street_number) if street_number else None,
+        'building': building_details if building_details else None
+    }
 
 @app.get("/seg")
 async def segment_input_text(
     q: str = Query(..., description="The input text to be segmented"),
-    item: Optional[str] = Query(None, description="Specific terms to output, options: a, d, sd, st, sn, b")
+    item: Optional[List[str]] = Query(None, description="Specific items to return (area, district, sub_district, street_name, street_number, building)")
 ):
     try:
         segmented_output = segment_input(q)
         if item:
-            # Filter the result based on the requested items
-            filtered_output = {k: v for k, v in segmented_output.items() if k[0] in item}
+            # Filter the output to return only the requested items
+            filtered_output = {key: value for key, value in segmented_output.items() if key in item}
             return {"segmented_text": filtered_output}
-        return {"segmented_text": segmented_output}
+        else:
+            return {"segmented_text": segmented_output}
     except Exception as e:
         return {"error": str(e)}
-
